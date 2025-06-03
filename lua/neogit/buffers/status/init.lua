@@ -290,6 +290,11 @@ function M:redraw(cursor, view)
     return
   end
 
+  if not self.buffer:is_focused() then
+    logger.debug("[STATUS] Buffer is no longer focused - bail")
+    return
+  end
+
   logger.debug("[STATUS] Rendering UI")
   self.buffer.ui:render(unpack(ui.Status(git.repo.state, self.config)))
 
