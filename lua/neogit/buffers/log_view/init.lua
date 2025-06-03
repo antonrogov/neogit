@@ -5,6 +5,8 @@ local popups = require("neogit.popups")
 local status_maps = require("neogit.config").get_reversed_status_maps()
 local CommitViewBuffer = require("neogit.buffers.commit_view")
 local util = require("neogit.lib.util")
+local git = require("neogit.lib.git")
+local Watcher = require("neogit.watcher")
 local a = require("plenary.async")
 
 ---@class LogViewBuffer
@@ -16,6 +18,7 @@ local a = require("plenary.async")
 ---@field header string
 ---@field fetch_func fun(offset: number): CommitLogEntry[]
 ---@field refresh_lock Semaphore
+---@field root string
 local M = {}
 M.__index = M
 
@@ -37,6 +40,7 @@ function M.new(commits, internal_args, files, fetch_func, header, remotes)
     buffer = nil,
     refresh_lock = a.control.Semaphore.new(1),
     header = header,
+    root = git.cli.worktree_root("."),
   }
 
   setmetatable(instance, M)
@@ -243,7 +247,7 @@ function M:open()
         local permit = self.refresh_lock:acquire()
 
         self.commits = util.merge(self.commits, self.fetch_func(self:commit_count()))
-        self.buffer.ui:render(unpack(ui.View(self.commits, self.remotes, self.internal_args)))
+        self.buffer:redraw()
 
         permit:forget()
       end),
@@ -280,6 +284,7 @@ function M:open()
           vim.cmd("norm! k")
         end
       end,
+      [status_maps["RefreshBuffer"]] = function() self:redraw() end,
     },
   }
 
@@ -302,10 +307,24 @@ function M:open()
       return ui.View(self.commits, self.remotes, self.internal_args, header)
     end,
     after = function(buffer)
+      Watcher.instance(self.root):register(self)
       -- First line is empty, so move cursor to second line.
       buffer:move_cursor(2)
     end,
+    on_detach = function()
+      Watcher.instance(self.root):unregister(self)
+    end,
   }
+end
+
+-- watcher interface
+function M:id()
+  return "LogViewBuffer"
+end
+
+function M:redraw()
+  self.commits = self.fetch_func(0)
+  self.buffer:redraw()
 end
 
 return M

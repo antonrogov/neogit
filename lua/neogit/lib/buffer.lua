@@ -214,6 +214,13 @@ function Buffer:close(force)
     api.nvim_win_close(self.header_win_handle, true)
   end
 
+  if self.kind == "stack" then
+    if not Buffer.pop() then
+      api.nvim_buf_delete(self.handle, { force = force })
+    end
+    return
+  end
+
   if self.kind == "replace" then
     if self.old_cwd then
       api.nvim_set_current_dir(self.old_cwd)
@@ -254,6 +261,8 @@ function Buffer:hide()
     -- `silent!` as this might throw errors if 'hidden' is disabled.
     vim.cmd("silent! 1only")
     vim.cmd("try | tabn # | catch /.*/ | tabp | endtry")
+  elseif self.kind == "stack" then
+    Buffer.pop()
   elseif self.kind == "replace" then
     if self.old_cwd then
       api.nvim_set_current_dir(self.old_cwd)
@@ -297,9 +306,14 @@ function Buffer:show()
   ---@return integer window handle
   local function open()
     local win
-    if self.kind == "replace" then
-      self.old_buf = api.nvim_get_current_buf()
-      self.old_cwd = vim.uv.cwd()
+    if self.kind == "replace" or self.kind == "stack" then
+      if self.kind == "stack" then
+        Buffer.push()
+      else
+        self.old_buf = api.nvim_get_current_buf()
+        self.old_cwd = vim.uv.cwd()
+      end
+
       api.nvim_set_current_buf(self.handle)
       win = api.nvim_get_current_win()
     elseif self.kind == "tab" then
@@ -428,15 +442,19 @@ function Buffer:get_window_option(name)
   end
 end
 
-function Buffer:set_buffer_option(name, value)
-  if self.handle ~= nil then
+local function set_buffer_option(buf, name, value)
+  if buf ~= nil then
     -- TODO: Remove this at some point. Nvim 0.10 throws an error if using both buf and scope
     if vim.fn.has("nvim-0.11") == 1 then
-      api.nvim_set_option_value(name, value, { scope = "local", buf = self.handle })
+      api.nvim_set_option_value(name, value, { scope = "local", buf = buf })
     else
-      api.nvim_set_option_value(name, value, { buf = self.handle })
+      api.nvim_set_option_value(name, value, { buf = buf })
     end
   end
+end
+
+function Buffer:set_buffer_option(name, value)
+  set_buffer_option(self.handle, name, value)
 end
 
 function Buffer:set_window_option(name, value)
@@ -797,8 +815,8 @@ function Buffer.create(config)
   end
 
   if config.render then
-    logger.debug("[BUFFER:" .. buffer.handle .. "] Rendering buffer")
-    buffer.ui:render(unpack(config.render(buffer)))
+    buffer.render_fn = config.render
+    buffer:draw()
   end
 
   for event, callback in pairs(config.autocmds or {}) do
@@ -963,6 +981,31 @@ function Buffer.create(config)
   return buffer
 end
 
+function Buffer:draw()
+  if self.render_fn then
+    logger.debug("[BUFFER:" .. self.handle .. "] Rendering buffer")
+    self.ui:render(unpack(self.render_fn(self)))
+  end
+end
+
+function Buffer:redraw()
+  if not self.handle then
+    logger.debug("[BUFFER:" .. self.handle .. "] Buffer no longer exists - bail")
+    return
+  end
+
+  if not self:is_focused() then
+    logger.debug("[BUFFER:" .. self.handle .. "] Buffer is no longer focused - bail")
+    return
+  end
+
+  local cursor = self.ui:get_cursor_location()
+  local view = self:save_view()
+
+  self:draw()
+  self:restore_view(view, self.ui:resolve_cursor_location(cursor))
+end
+
 ---@param name string
 ---@return Buffer
 function Buffer.from_name(name)
@@ -975,6 +1018,37 @@ function Buffer.from_name(name)
   local window_handle = fn.win_findbuf(buffer_handle)
 
   return Buffer:new(buffer_handle, window_handle[1])
+end
+
+
+local buffer_stack = {}
+
+function Buffer.push()
+  local buf = api.nvim_get_current_buf()
+  local cwd = vim.uv.cwd()
+  table.insert(buffer_stack, { buf = buf, cwd = cwd })
+  set_buffer_option(buf, "bufhidden", "hide")
+end
+
+function Buffer.pop()
+  if #buffer_stack == 0 then
+    return false
+  end
+
+  local entry = table.remove(buffer_stack)
+
+  if not api.nvim_buf_is_loaded(entry.buf) then
+    return Buffer.pop()
+  end
+
+  if entry.cwd then
+    api.nvim_set_current_dir(entry.cwd)
+  end
+
+  api.nvim_set_current_buf(entry.buf)
+  set_buffer_option(entry.buf, "bufhidden", "wipe")
+
+  return true
 end
 
 return Buffer
