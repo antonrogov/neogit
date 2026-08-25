@@ -217,12 +217,14 @@ function Buffer:close(force)
   end
 
   if self.kind == "stack" then
-    if self.old_buf and api.nvim_buf_is_loaded(self.old_buf) then
-      api.nvim_set_current_buf(self.old_buf)
-      self.old_buf = nil
-    end
-
-    api.nvim_buf_delete(self.handle, { force = force })
+    -- if self.old_buf and api.nvim_buf_is_loaded(self.old_buf) and api.nvim_buf_is_valid(self.old_buf) then
+    --   print('unload')
+    --   api.nvim_set_current_buf(self.old_buf)
+    --   self.old_buf = nil
+    --   api.nvim_buf_delete(self.handle, { force = force })
+    -- else
+      Snacks.bufdelete({ buf = self.handle, wipe = true })
+    -- end
     return
   end
 
@@ -749,7 +751,7 @@ function Buffer.create(config)
     logger.debug("[BUFFER:" .. buffer.handle .. "] Showing buffer in window " .. win .. " as " .. buffer.kind)
   end
 
-  local default_bufhidden = config.kind == "stack" and "hide" or "wipe"
+  local default_bufhidden = config.kind == "stack" and "" or "wipe"
   logger.debug("[BUFFER:" .. buffer.handle .. "] Setting buffer options")
   buffer:set_buffer_option("swapfile", false)
   buffer:set_buffer_option("modeline", false)
@@ -757,6 +759,9 @@ function Buffer.create(config)
   buffer:set_buffer_option("modifiable", config.modifiable or false)
   buffer:set_buffer_option("modified", config.modifiable or false)
   buffer:set_buffer_option("readonly", config.readonly or false)
+  if config.kind == "stack" then
+    buffer:set_buffer_option("buflisted", true)
+  end
 
   if config.buftype ~= false then
     buffer:set_buffer_option("buftype", config.buftype or "nofile")

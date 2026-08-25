@@ -79,7 +79,7 @@ local function open_popup(status, name, f)
   end
 
   return popups.open(name, function(c)
-    git.repository.make_current(status.repo)
+    -- git.repository.make_current(status.repo)
     f(c)
   end)
 end
@@ -1146,7 +1146,7 @@ end
 ---@return fun(): nil
 M.n_stage = function(self)
   return a.void(function()
-    git.repository.instance(self.root)
+    -- git.repository.instance(self.root)
 
     local stagable = self.buffer.ui:get_hunk_or_filename_under_cursor()
     local section = self.buffer.ui:get_current_section()
@@ -1322,7 +1322,7 @@ M.n_goto_file = function(self)
       end
 
       local cursor = translate_cursor_location(self, item)
-      self:close()
+      -- self:close()
       vim.schedule_wrap(open)("edit", item.absolute_path, cursor)
       return
     end

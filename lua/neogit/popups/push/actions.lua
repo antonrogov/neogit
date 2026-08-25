@@ -26,15 +26,19 @@ local function push_to(args, remote, branch, opts)
     table.insert(args, "--force-if-includes")
   end
 
-  local name
+  local to_label
   if branch then
-    name = remote .. "/" .. branch
+    -- if branch then
+    --   to_label = local_branch .. " to " .. remote .. "/" .. remote_branch
+    -- else
+      to_label = remote .. "/" .. branch
+    -- end
   else
-    name = remote
+    to_label = "to " .. remote
   end
 
-  logger.debug("Pushing to " .. name)
-  notification.info("Pushing to " .. name)
+  logger.debug("Pushing " .. to_label)
+  notification.info("Pushing " .. to_label)
 
   local res = git.push.push_interactive(remote, branch, args)
 
@@ -49,7 +53,7 @@ local function push_to(args, remote, branch, opts)
 
   -- Only ask the user whether to force push if not already specified and feature enabled
   if res and res:failure() and not using_force and updates_rejected and config.values.prompt_force_push then
-    logger.error("Attempting force push to " .. name)
+    logger.error("Attempting force push " .. to_label)
 
     local message = "Your branch has diverged from the remote branch. Do you want to force push with lease?"
     if input.get_permission(message) then
@@ -60,12 +64,12 @@ local function push_to(args, remote, branch, opts)
 
   if res and res:success() then
     a.util.scheduler()
-    logger.debug("Pushed to " .. name)
-    notification.info("Pushed to " .. name, { dismiss = true })
+    logger.debug("Pushed " .. to_label)
+    notification.info("Pushed " .. to_label, { dismiss = true })
     event.send("PushComplete")
   else
-    logger.debug("Failed to push to " .. name)
-    notification.error("Failed to push to " .. name, { dismiss = true })
+    logger.debug("Failed to push " .. to_label)
+    notification.error("Failed to push " .. to_label, { dismiss = true })
   end
 end
 
@@ -107,6 +111,10 @@ function M.to_elsewhere(popup)
 
   if target then
     local remote, branch = git.branch.parse_remote_branch(target)
+    local current_branch = git.branch.current()
+    if branch and current_branch ~= branch then
+      branch = current_branch .. ":" .. branch
+    end
     push_to(popup:get_arguments(), remote, branch)
   end
 end

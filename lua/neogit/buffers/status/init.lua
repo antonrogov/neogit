@@ -77,6 +77,27 @@ function M.instance(dir)
   return instances[vim.fs.normalize(dir)]
 end
 
+function M.uniq_name(root)
+  local base = string.match(root, "([^/\\]+)$")
+  local name = base
+  local suffix = 2
+  local generated = false
+
+  while not generated do
+    generated = true
+    for _, instance in pairs(instances) do
+      if instance.name == name then
+        name = base .. suffix
+        suffix = suffix + 1
+        generated = false
+        break
+      end
+    end
+  end
+
+  return name
+end
+
 ---@param config NeogitConfig
 ---@param root string
 ---@return StatusBuffer
@@ -93,7 +114,7 @@ function M.new(config, root)
     fold_state = nil,
     cursor_state = nil,
     view_state = nil,
-    name = string.match(root, "([^/\\]+)$"),
+    name = M.uniq_name(root),
     repo = git.repository.instance(root),
   }
 
@@ -112,7 +133,12 @@ function M:_action(name)
   local action = require("neogit.buffers.status.actions")[name]
   assert(action, ("Status Buffer action %q is undefined"):format(name))
 
-  return action(self)
+  local fn = action(self)
+
+  return function()
+    git.repository.make_current(self.repo)
+    fn()
+  end
 end
 
 ---@param kind nil|string
